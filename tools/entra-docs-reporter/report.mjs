@@ -163,9 +163,19 @@ function detectSubcategory(repo, pr, filePaths) {
   return "General";
 }
 
-function isEntraRelated(repo, pr, filePaths, keywords) {
+function isEntraRelated(repo, pr, filePaths, keywords, azureDocsPathPrefixes) {
   if (repo.toLowerCase() === "microsoftdocs/entra-docs") {
     return true;
+  }
+
+  if (repo.toLowerCase() === "microsoftdocs/azure-docs") {
+    const lowerFiles = filePaths.map((f) => f.toLowerCase());
+    const pathMatch = lowerFiles.some((filePath) =>
+      azureDocsPathPrefixes.some((prefix) => filePath.startsWith(prefix.toLowerCase()))
+    );
+    if (pathMatch) {
+      return true;
+    }
   }
 
   const labels = (pr.labels || []).map((l) => l.name.toLowerCase());
@@ -406,6 +416,9 @@ async function main() {
       "entra,active-directory,identity,authentication,conditional-access,external-identities,identity-governance,permissions-management,workload-identities"
     )
   );
+  const azureDocsPathPrefixes = splitCsv(
+    getEnv("AZURE_DOCS_PATH_PREFIXES", "articles/active-directory")
+  );
 
   const allRows = [];
 
@@ -413,7 +426,7 @@ async function main() {
     const prs = await listPullRequests(repo, githubToken, sinceIso);
     for (const pr of prs) {
       const files = await listPullFiles(repo, pr.number, githubToken);
-      if (!isEntraRelated(repo, pr, files, keywords)) {
+      if (!isEntraRelated(repo, pr, files, keywords, azureDocsPathPrefixes)) {
         continue;
       }
 
