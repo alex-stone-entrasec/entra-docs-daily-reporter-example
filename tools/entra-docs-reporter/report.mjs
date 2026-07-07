@@ -588,12 +588,12 @@ function buildMarkdownWindow({ title, grouped, total, sinceIso, generatedAtIso }
         .map((row) => {
           const itemLabel = row.source === "Commit" ? row.number : `#${row.number}`;
           const updateText = `${itemLabel} ${row.title}`;
-          const created = ` ${escMd(toAmsterdamTime(row.createdAt))} `;
-          const author = ` ${escMd(row.author)} `;
-          const update = ` ${escMd(updateText)} `;
-          const commit = ` ${mdLink("commit", row.commitUrl)} `;
-          const learn = ` ${mdLink("learn", row.msLearnUrl)} `;
-          const pr = ` ${mdLink("pr", row.prUrl)} `;
+          const created = `  ${escMd(toAmsterdamTime(row.createdAt))}  `;
+          const author = `  ${escMd(row.author)}  `;
+          const update = `  ${escMd(updateText)}  `;
+          const commit = `  ${mdLink("commit", row.commitUrl)}  `;
+          const learn = `  ${mdLink("learn", row.msLearnUrl)}  `;
+          const pr = `  ${mdLink("pr", row.prUrl)}  `;
           return `|${created}|${author}|${update}|${commit}|${learn}|${pr}|`;
         })
         .join("\n");
