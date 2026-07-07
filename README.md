@@ -1,8 +1,8 @@
 # Entra Docs Daily Reporter
 
-Daily GitHub Actions report for newly opened Microsoft Entra documentation PRs.
+Daily GitHub Actions report for Microsoft Entra documentation updates in a strict 24-hour window.
 
-The workflow runs at 07:00 Europe/Amsterdam, groups PRs by subcategory, and posts a formatted daily issue so GitHub notifications can email you updates.
+The workflow runs at 07:00 Europe/Amsterdam, collects updates from Entra docs sources, and posts a formatted GitHub issue so GitHub notifications can email you updates.
 
 ## 1-Minute Quick Start
 
@@ -14,12 +14,13 @@ The workflow runs at 07:00 Europe/Amsterdam, groups PRs by subcategory, and post
 
 ## What You Get
 
-- Daily scan of:
-  - `MicrosoftDocs/entra-docs`
-  - `MicrosoftDocs/azure-docs` (filtered for Entra keywords)
-- Grouped sections such as Conditional Access, Authentication, Identity Governance, and more
-- HTML tables in the issue body for fast scanning
-- Uploaded workflow artifacts (`html`, `md`, `json`)
+- Strict 24-hour report window (no multi-day section in the issue body)
+- Data sources:
+  - `MicrosoftDocs/entra-docs` via PR feed
+  - `MicrosoftDocs/azure-docs` via commit feed for `articles/active-directory/<subpage>`
+- Grouped sections by subpage/category
+- Markdown tables in the issue body (email-readable)
+- Uploaded artifacts: `html`, `md`, `json`
 
 ## Repo Structure
 
@@ -44,11 +45,12 @@ gh run list --workflow "entra-docs-daily-reporter.yml" --repo <owner>/<repo> --l
 
 ## Customize
 
-- Change scanned repositories in workflow env: `ENTRA_DOC_REPOS`
-- Change keyword filter in workflow env: `ENTRA_KEYWORDS`
-- Adjust subcategory detection in `detectSubcategory(...)` inside `tools/entra-docs-reporter/report.mjs`
+- Main window: `LOOKBACK_HOURS` (default `24`)
+- Azure Docs base path: `AZURE_DOCS_COMMITS_PATH` (default `articles/active-directory`)
+- Azure Docs tracked subpages: `AZURE_DOCS_SUBPAGES`
+- Enable/disable commit feed mode: `USE_COMMITS_FOR_AZURE_DOCS`
 
 ## Notes
 
 - No SMTP provider is required.
-- Delivery is via GitHub notifications, so user notification settings apply.
+- Delivery is via GitHub notifications, so account notification settings apply.

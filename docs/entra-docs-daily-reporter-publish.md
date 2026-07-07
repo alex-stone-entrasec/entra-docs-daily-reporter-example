@@ -1,16 +1,18 @@
 # Copy/Paste Example: Daily Entra Documentation PR Reporter
 
-Use this example to track all newly opened Microsoft Entra documentation PRs and receive a daily HTML summary email.
+Use this example to track Microsoft Entra documentation updates and receive a daily notification-friendly summary.
 
-Delivery model: the workflow posts a daily GitHub issue with HTML tables. GitHub issue notifications provide the email delivery.
+Delivery model: the workflow posts a daily GitHub issue with Markdown tables. GitHub issue notifications provide the email delivery.
 
 ## Features
 
 - Runs on GitHub Actions
 - Daily schedule at 07:00 (Europe/Amsterdam)
-- HTML email with grouped tables per Entra subcategory
+- Strict 24-hour reporting window
+- Grouped Markdown tables per Entra subcategory/subpage
 - Artifact upload with the rendered HTML report
-- Easy to customize repos, keywords, and grouping logic
+- Commit-based tracking for Azure Docs Entra paths
+- Easy to customize subpages and grouping logic
 
 ## Files
 
@@ -35,15 +37,15 @@ I use a GitHub Actions workflow that runs daily at 07:00 and emails me all newly
 
 What I like:
 
-- It catches updates from `MicrosoftDocs/entra-docs` and Entra-related content in `MicrosoftDocs/azure-docs`.
+- It catches updates from `MicrosoftDocs/entra-docs` and Azure Docs commits under `articles/active-directory/<subpage>`.
 - The report is grouped by subcategory, so I can scan changes quickly.
-- The email contains a styled HTML table and direct links to each PR.
+- The email-friendly Markdown table includes direct links to commits/PRs.
 
 How to adopt:
 
 - Copy workflow and Node script
 - Enable issue notifications in GitHub
-- Adjust repository list and keyword filters
+- Adjust active-directory subpages and tracking settings
 - Optionally tweak subcategory rules in `detectSubcategory(...)`
 
 This makes docs change tracking fully automated and easy to share with teams.

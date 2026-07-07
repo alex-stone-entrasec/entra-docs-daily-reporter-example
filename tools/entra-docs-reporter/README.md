@@ -1,8 +1,8 @@
 # Entra Docs Daily Reporter (GitHub Actions)
 
-This example publishes a **daily report at 07:00 Europe/Amsterdam** with all newly opened pull requests related to Microsoft Entra documentation.
+This example publishes a **daily report at 07:00 Europe/Amsterdam** with Entra documentation updates in a strict **last 24 hours** window.
 
-It produces grouped HTML tables by subcategory (for example: Conditional Access, Authentication, Identity Governance), then posts the report to a GitHub issue so GitHub notifications can deliver the email.
+It posts a grouped Markdown report to a GitHub issue so GitHub notifications can deliver the email.
 
 ## What this includes
 
@@ -13,19 +13,21 @@ It produces grouped HTML tables by subcategory (for example: Conditional Access,
 ## How it works
 
 1. Workflow triggers hourly and only runs at 07:00 local Europe/Amsterdam time.
-2. Script looks back 24 hours for new PRs in configured documentation repos.
-3. Script filters for Entra-related PRs.
-4. PRs are grouped into subcategories.
+2. Script reads updates from:
+	- `MicrosoftDocs/entra-docs` PR feed
+	- `MicrosoftDocs/azure-docs` commit feed per configured subpages under `articles/active-directory`
+3. Script filters to the last 24 hours only.
+4. Results are grouped into subcategories/subpages.
 5. Workflow creates or updates a daily issue with the report body.
 6. GitHub sends notifications to subscribed users/watchers.
 7. HTML, Markdown, and metadata outputs are uploaded as artifacts.
 
-## Repositories scanned (default)
+## Sources scanned (default)
 
 - `MicrosoftDocs/entra-docs`
-- `MicrosoftDocs/azure-docs` (filtered by Entra keywords)
+- `MicrosoftDocs/azure-docs` commits for `articles/active-directory/<subpage>`
 
-Override using env `ENTRA_DOC_REPOS` in the workflow.
+Override with workflow env values such as `ENTRA_DOC_REPOS`, `AZURE_DOCS_COMMITS_PATH`, and `AZURE_DOCS_SUBPAGES`.
 
 ## Required GitHub setup
 
@@ -48,20 +50,16 @@ GitHub sends issue notifications to subscribers/watchers. To ensure you get this
 
 If you want a mailbox rule for info@janbakker.tech, filter on issue title prefix: Daily Entra Docs PR Report.
 
-## Customize subcategories
+## Customize tracking
 
-The grouping rules are in `report.mjs` inside `detectSubcategory(...)`.
+- `LOOKBACK_HOURS`: default `24`
+- `AZURE_DOCS_COMMITS_PATH`: default `articles/active-directory`
+- `AZURE_DOCS_SUBPAGES`: comma-separated subpages to track
+- `USE_COMMITS_FOR_AZURE_DOCS`: `true` to use commit-based Azure Docs tracking
 
-You can add or adjust pattern rules, for example:
+Subcategory grouping logic can be adjusted in `report.mjs`.
 
-- `Conditional Access`
-- `Authentication`
-- `Identity Governance`
-- `External Identities`
-- `Identity Protection`
-- `Permissions Management`
-- `Workload Identities`
-- `Verified ID`
+The report output is intentionally Markdown-first for readability in email notifications.
 
 ## Local test
 
