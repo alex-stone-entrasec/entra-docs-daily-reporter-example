@@ -711,7 +711,7 @@ async function main() {
         commitUrl: pr.head?.sha ? `https://github.com/${repo}/commit/${pr.head.sha}` : "",
         msLearnUrl: (() => {
           const primaryDocFile = pickPrimaryDocFile(repo, files);
-          return primaryDocFile ? toMsLearnUrl(repo, primaryDocFile) : "";
+          return primaryDocFile && isLikelyLearnPagePath(repo, primaryDocFile) ? toMsLearnUrl(repo, primaryDocFile) : "";
         })(),
         prUrl: pr.html_url,
         url: pr.html_url
