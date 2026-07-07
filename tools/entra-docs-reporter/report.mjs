@@ -31,6 +31,46 @@ function escMd(value) {
     .trim();
 }
 
+function normalizeDocPath(filePath) {
+  let path = filePath.replace(/\\/g, "/").replace(/\.md$/i, "");
+  if (path.endsWith("/index")) {
+    path = path.slice(0, -6);
+  }
+  return path;
+}
+
+function toMsLearnUrl(repo, filePath) {
+  const normalized = normalizeDocPath(filePath);
+  if (repo.toLowerCase() === "microsoftdocs/azure-docs" && normalized.toLowerCase().startsWith("articles/")) {
+    return `https://learn.microsoft.com/en-us/azure/${normalized.slice("articles/".length)}`;
+  }
+  if (repo.toLowerCase() === "microsoftdocs/entra-docs" && normalized.toLowerCase().startsWith("docs/")) {
+    return `https://learn.microsoft.com/en-us/entra/${normalized.slice("docs/".length)}`;
+  }
+  return "";
+}
+
+function pickPrimaryDocFile(repo, filePaths) {
+  const files = filePaths.filter((f) => /\.md$/i.test(f));
+  if (files.length === 0) {
+    return "";
+  }
+
+  if (repo.toLowerCase() === "microsoftdocs/azure-docs") {
+    const preferred = files.find((f) => f.toLowerCase().startsWith("articles/active-directory/"));
+    if (preferred) return preferred;
+    const articlesMd = files.find((f) => f.toLowerCase().startsWith("articles/"));
+    if (articlesMd) return articlesMd;
+  }
+
+  if (repo.toLowerCase() === "microsoftdocs/entra-docs") {
+    const preferred = files.find((f) => f.toLowerCase().startsWith("docs/"));
+    if (preferred) return preferred;
+  }
+
+  return files[0];
+}
+
 function titleCase(value) {
   return value
     .split(/[-_\s]+/)
@@ -167,6 +207,7 @@ async function listCommitsByPath(repo, docsPath, token, sinceIso) {
 async function listCommitsForSubpages(repo, basePath, subpages, token, sinceIso) {
   const rows = [];
   const commitToPrCache = new Map();
+  const commitDetailsCache = new Map();
 
   for (const subpage of subpages) {
     const pathForCall = `${basePath.replace(/\/+$/, "")}/${subpage.replace(/^\/+/, "")}`;
@@ -181,6 +222,14 @@ async function listCommitsForSubpages(repo, basePath, subpages, token, sinceIso)
       const message = (commit.commit?.message || "").split(/\r?\n/)[0] || `Commit ${commit.sha.slice(0, 7)}`;
       const author = commit.author?.login || commit.commit?.author?.name || "unknown";
       const prUrl = await getAssociatedPullRequestUrl(repo, commit.sha, token, commitToPrCache);
+      let details = commitDetailsCache.get(commit.sha);
+      if (!details) {
+        details = await getCommitDetails(repo, commit.sha, token);
+        commitDetailsCache.set(commit.sha, details);
+      }
+      const filePaths = (details.files || []).map((f) => f.filename).filter(Boolean);
+      const primaryDocFile = pickPrimaryDocFile(repo, filePaths);
+      const msLearnUrl = primaryDocFile ? toMsLearnUrl(repo, primaryDocFile) : "";
 
       rows.push({
         subcategory: titleCase(subpage),
@@ -191,6 +240,8 @@ async function listCommitsForSubpages(repo, basePath, subpages, token, sinceIso)
         createdAt,
         labels: ["commit"],
         source: "Commit",
+        commitUrl: commit.html_url,
+        msLearnUrl,
         prUrl,
         url: commit.html_url
       });
@@ -485,15 +536,15 @@ function buildMarkdownWindow({ title, grouped, total, sinceIso, generatedAtIso }
         .map((row) => {
           const labels = row.labels.length ? row.labels.join(", ") : "-";
           const itemLabel = row.source === "Commit" ? row.number : `#${row.number}`;
-          return `| ${escMd(row.author)} | ${escMd(toAmsterdamTime(row.createdAt))} | ${escMd(row.source || "PR")} | ${escMd(itemLabel)} | ${escMd(row.repo)} | ${escMd(row.title)} | ${escMd(row.url)} | ${escMd(row.prUrl || "-")} | ${escMd(labels)} |`;
+          return `| ${escMd(row.author)} | ${escMd(toAmsterdamTime(row.createdAt))} | ${escMd(row.source || "PR")} | ${escMd(itemLabel)} | ${escMd(row.repo)} | ${escMd(row.title)} | ${escMd(row.commitUrl || "-")} | ${escMd(row.msLearnUrl || "-")} | ${escMd(row.prUrl || "-")} | ${escMd(labels)} |`;
         })
         .join("\n");
 
       return `
 ## ${esc(subcategory)} (${rows.length})
 
-| Author | Created (Europe/Amsterdam) | Source | Item | Repository | Title | URL | PR URL | Labels |
-|---|---|---|---|---|---|---|---|---|
+| Author | Created (Europe/Amsterdam) | Source | Item | Repository | Title | Commit URL | MS Learn URL | PR URL | Labels |
+|---|---|---|---|---|---|---|---|---|---|
 ${tableRows}`;
     })
     .join("\n\n");
@@ -599,6 +650,11 @@ async function main() {
         createdAt: pr.created_at,
         labels: (pr.labels || []).map((l) => l.name),
         source: "PR",
+        commitUrl: pr.head?.sha ? `https://github.com/${repo}/commit/${pr.head.sha}` : "",
+        msLearnUrl: (() => {
+          const primaryDocFile = pickPrimaryDocFile(repo, files);
+          return primaryDocFile ? toMsLearnUrl(repo, primaryDocFile) : "";
+        })(),
         prUrl: pr.html_url,
         url: pr.html_url
       });
