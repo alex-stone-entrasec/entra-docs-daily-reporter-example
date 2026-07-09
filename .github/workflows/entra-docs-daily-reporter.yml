@@ -71,7 +71,7 @@ jobs:
             const notificationComment = [
               `Daily report refresh for ${metadata.title}.`,
               '',
-              issueBody
+              `The issue body was updated with the latest 24-hour report (${metadata.total24h} items).`
             ].join('\n');
 
             const labelsResponse = await github.rest.issues.listLabelsForRepo({ owner, repo, per_page: 100 });
