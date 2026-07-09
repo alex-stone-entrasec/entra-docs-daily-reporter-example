@@ -21,7 +21,7 @@ It posts a grouped Markdown report to a GitHub issue so GitHub notifications can
 6. Workflow creates or updates a daily issue with the report body.
 7. If the daily issue already exists, the workflow adds a refresh comment with the latest report so GitHub still sends an email notification.
 8. GitHub sends notifications to subscribed users/watchers.
-8. HTML, Markdown, and metadata outputs are uploaded as artifacts.
+9. HTML, Markdown, and metadata outputs are uploaded as artifacts.
 
 ## Why Auto Publish commits instead of author commits?
 
