@@ -2,7 +2,7 @@
 
 Use this example to track Microsoft Entra documentation updates and receive a daily notification-friendly summary.
 
-Delivery model: the workflow posts a daily GitHub issue with Markdown tables. GitHub issue notifications provide the email delivery.
+Delivery model: the workflow posts a daily GitHub issue with Markdown tables. If the daily issue already exists, it adds a refresh comment so GitHub issue notifications still provide the email delivery.
 
 ## Features
 

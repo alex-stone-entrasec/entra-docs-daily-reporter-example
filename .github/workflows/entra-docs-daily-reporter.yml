@@ -82,6 +82,11 @@ jobs:
 
             if (found.data.items.length > 0) {
               const issueNumber = found.data.items[0].number;
+              const notificationComment = [
+                `Daily report refresh for ${metadata.title}.`,
+                '',
+                `The issue body was updated with the latest 24-hour report (${metadata.total24h} items).`
+              ].join('\n');
               await github.rest.issues.update({
                 owner,
                 repo,
@@ -90,6 +95,17 @@ jobs:
                 body: issueBody,
                 labels: [label]
               });
+              try {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: issueNumber,
+                  body: notificationComment
+                });
+              } catch (error) {
+                core.error(`Failed to post refresh comment on issue #${issueNumber}: ${error.message}`);
+                throw error;
+              }
               core.info(`Updated issue #${issueNumber}`);
             } else {
               const created = await github.rest.issues.create({

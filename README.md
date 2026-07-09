@@ -2,7 +2,7 @@
 
 Daily GitHub Actions report for Microsoft Entra documentation updates in a strict 24-hour window.
 
-The workflow runs at 07:00 Europe/Amsterdam, collects updates from Entra docs sources, and posts a formatted GitHub issue so GitHub notifications can email you updates.
+The workflow runs at 07:00 Europe/Amsterdam, collects updates from Entra docs sources, and posts a formatted GitHub issue so GitHub notifications can email you updates. When the daily issue already exists, the workflow also adds a refresh comment so the rerun still sends an email notification.
 
 ## 1-Minute Quick Start
 
@@ -65,7 +65,7 @@ gh run list --workflow "entra-docs-daily-reporter.yml" --repo <owner>/<repo> --l
 
 ### `Unhandled error: HttpError: Issues has been disabled in this repository.`
 
-The workflow publishes the report by creating or updating a GitHub issue. If repository issues are disabled, the run fails at the publish step.
+The workflow publishes the report by creating or updating a GitHub issue and comments on existing daily issues to force a fresh notification email. If repository issues are disabled, the run fails at the publish step.
 
 Fix:
 
