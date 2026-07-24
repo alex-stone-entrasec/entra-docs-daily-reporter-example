@@ -3,6 +3,11 @@ import path from "node:path";
 
 const GITHUB_API = "https://api.github.com";
 
+// The workflow sets TZ so Node's local-time operations resolve to this zone.
+// Read it back here (instead of hardcoding "Europe/Amsterdam") so changing
+// the single TZ line in the workflow retimes the whole report consistently.
+const REPORT_TZ = process.env.TZ && process.env.TZ.trim() ? process.env.TZ.trim() : "Europe/Amsterdam";
+
 function getEnv(name, fallback = "") {
   const value = process.env[name];
   return value && value.trim().length > 0 ? value.trim() : fallback;
@@ -49,13 +54,33 @@ const ENTRA_DOCS_NON_PUBLISH_FOLDERS = new Set([
   "architecture",
 ]);
 
-function isLikelyLearnPagePath(repo, filePath) {
+// Repos scanned for published Entra documentation changes. Most Entra content
+// lives in entra-docs, but some hasn't been migrated out of azure-docs yet -
+// Entra External ID's "customers" tenant type was Azure AD B2C, and that
+// content still lives under azure-docs/articles/active-directory-b2c/.
+// azure-docs is a much larger, busier repo covering all of Azure, so it's
+// scoped to that one folder rather than scanned in full.
+const PUBLISH_SOURCES = [
+  { repo: "MicrosoftDocs/entra-docs" },
+  { repo: "MicrosoftDocs/azure-docs", pathPrefixes: ["articles/active-directory-b2c/"] }
+];
+
+function isLikelyLearnPagePath(repo, filePath, pathPrefixes) {
   const p = filePath.replace(/\\/g, "/").toLowerCase();
   if (!p.endsWith(".md")) {
     return false;
   }
   if (p.endsWith("/toc.md") || p.endsWith("/toc.yml") || p.endsWith("/index.yml")) {
     return false;
+  }
+
+  // Restrict a source to specific folders (e.g. azure-docs is far too broad
+  // to scan in full - only the still-unmigrated Entra-related subfolders
+  // matter here).
+  if (pathPrefixes && pathPrefixes.length > 0) {
+    if (!pathPrefixes.some((prefix) => p.startsWith(prefix.toLowerCase()))) {
+      return false;
+    }
   }
 
   if (repo.toLowerCase() === "microsoftdocs/azure-docs") {
@@ -143,9 +168,9 @@ function extractPublishedVia(commitMessage) {
   return firstLine;
 }
 
-function toAmsterdamTime(iso) {
+function toLocalTime(iso) {
   const formatter = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Amsterdam",
+    timeZone: REPORT_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -174,67 +199,12 @@ async function fetchJson(url, token) {
   return response.json();
 }
 
-async function listPullRequests(repo, token, sinceIso) {
-  const items = [];
-  let page = 1;
-  const perPage = 100;
-
-  while (true) {
-    const url = `${GITHUB_API}/repos/${repo}/pulls?state=all&sort=created&direction=desc&per_page=${perPage}&page=${page}`;
-    const pulls = await fetchJson(url, token);
-    if (!Array.isArray(pulls) || pulls.length === 0) {
-      break;
-    }
-
-    let reachedOlder = false;
-
-    for (const pr of pulls) {
-      if (new Date(pr.created_at) < new Date(sinceIso)) {
-        reachedOlder = true;
-        break;
-      }
-      items.push(pr);
-    }
-
-    if (reachedOlder || pulls.length < perPage) {
-      break;
-    }
-
-    page += 1;
-  }
-
-  return items;
-}
-
-async function listPullFiles(repo, number, token) {
-  const files = [];
-  let page = 1;
-  const perPage = 100;
-
-  while (true) {
-    const url = `${GITHUB_API}/repos/${repo}/pulls/${number}/files?per_page=${perPage}&page=${page}`;
-    const pageItems = await fetchJson(url, token);
-
-    if (!Array.isArray(pageItems) || pageItems.length === 0) {
-      break;
-    }
-
-    files.push(...pageItems.map((f) => f.filename));
-
-    if (pageItems.length < perPage) {
-      break;
-    }
-
-    page += 1;
-  }
-
-  return files;
-}
-
-// Fetches all repo-level commits (no path filter) and returns those that are
-// "Auto Publish – main to live" or "Merging changes synced" batch commits
-// that landed within the time window.  These are the only commits that reflect
-// content becoming live on learn.microsoft.com.
+// Fetches repo-level commits (no path filter, so merge commits are included -
+// GitHub's commits API silently drops merges when a `path` filter is used,
+// but `since`/`until` are plain commit-date filters and don't have that
+// problem) and returns those that are "Auto Publish – main to live" or
+// "Merging changes synced" batch commits within [sinceIso, untilIso).  These
+// are the only commits that reflect content becoming live on learn.microsoft.com.
 async function listPublishBatches(repo, token, sinceIso, untilIso) {
   const items = [];
   let page = 1;
@@ -243,31 +213,21 @@ async function listPublishBatches(repo, token, sinceIso, untilIso) {
   const until = new Date(untilIso);
 
   while (true) {
-    const url = `${GITHUB_API}/repos/${repo}/commits?per_page=${perPage}&page=${page}`;
+    const url = `${GITHUB_API}/repos/${repo}/commits?since=${encodeURIComponent(sinceIso)}&until=${encodeURIComponent(untilIso)}&per_page=${perPage}&page=${page}`;
     const commits = await fetchJson(url, token);
 
     if (!Array.isArray(commits) || commits.length === 0) {
       break;
     }
 
-    let reachedOlder = false;
-
     for (const c of commits) {
       const createdAt = c.commit?.committer?.date || c.commit?.author?.date;
       if (!createdAt) {
         continue;
       }
+      // Defensive re-check even though the API already filtered server-side.
       const created = new Date(createdAt);
-      if (created < since) {
-        reachedOlder = true;
-        break;
-      }
-      // Commits are returned newest-first. Anything at or after the window's
-      // upper bound belongs to a later report day (or a same-day rerun) and
-      // must be skipped, not just left for "next time" - otherwise a run that
-      // fires late (or twice) re-reports items already covered by yesterday's
-      // window, since that window only had a lower bound before this fix.
-      if (created >= until) {
+      if (created < since || created >= until) {
         continue;
       }
 
@@ -281,7 +241,7 @@ async function listPublishBatches(repo, token, sinceIso, untilIso) {
       }
     }
 
-    if (reachedOlder || commits.length < perPage) {
+    if (commits.length < perPage) {
       break;
     }
 
@@ -294,7 +254,7 @@ async function listPublishBatches(repo, token, sinceIso, untilIso) {
 // Expands each publish-batch commit into one row per publishable doc file.
 // Each row carries its own subcategory derived from the file path so the
 // report stays grouped the same way as before.
-async function rowsFromPublishBatches(repo, token, sinceIso, untilIso) {
+async function rowsFromPublishBatches(repo, token, sinceIso, untilIso, pathPrefixes) {
   const batches = await listPublishBatches(repo, token, sinceIso, untilIso);
   const rows = [];
   const seen = new Set();
@@ -307,7 +267,7 @@ async function rowsFromPublishBatches(repo, token, sinceIso, untilIso) {
 
     const details = await getCommitDetails(repo, batch.sha, token);
     const allFiles = (details.files || []).map((f) => f.filename).filter(Boolean);
-    const publishableFiles = allFiles.filter((f) => isLikelyLearnPagePath(repo, f));
+    const publishableFiles = allFiles.filter((f) => isLikelyLearnPagePath(repo, f, pathPrefixes));
 
     for (const filePath of publishableFiles) {
       // Deduplicate: a file can appear in both a prmerger and a learn-build sync
@@ -320,15 +280,15 @@ async function rowsFromPublishBatches(repo, token, sinceIso, untilIso) {
       const msLearnUrl = toMsLearnUrl(repo, filePath);
       const sourceUrl = toGithubSourceUrl(repo, filePath);
 
-      // Derive subcategory from the file path. All publishable entra-docs files
-      // live under docs/<section>/..., so segments[1] is the section name.
-      // Files that don't match this pattern (e.g. from other repos if the
-      // function is reused) fall back to "General".
+      // Derive subcategory from the file path. Entra-docs files live under
+      // docs/<section>/..., azure-docs files under articles/<section>/...,
+      // so segments[1] is the section name either way. Anything that doesn't
+      // match either pattern falls back to "General".
       const segments = filePath.replace(/\\/g, "/").toLowerCase().split("/").filter(Boolean);
       let subcategory = "General";
-      if (segments[0] === "docs" && segments[1]) {
+      if ((segments[0] === "docs" || segments[0] === "articles") && segments[1]) {
         subcategory = titleCase(segments[1]);
-        // If the file lives in a subfolder (docs/<section>/<subfolder>/<file>.md),
+        // If the file lives in a subfolder (<root>/<section>/<subfolder>/<file>.md),
         // include the subfolder in the subcategory so items are grouped more granularly.
         if (segments[2] && segments.length >= 4) {
           subcategory = `${titleCase(segments[1])} > ${titleCase(segments[2])}`;
@@ -395,7 +355,7 @@ function buildHtml({ generatedAtIso, sinceIso, untilIso, grouped, total }) {
               <td>${esc(row.title)}</td>
               <td>${esc(row.repo)}</td>
               <td>${esc(row.author)}</td>
-              <td>${esc(toAmsterdamTime(row.createdAt))}</td>
+              <td>${esc(toLocalTime(row.createdAt))}</td>
               <td>${esc(labels)}</td>
               <td>${commitLink}</td>
               <td>${learnLink}</td>
@@ -413,7 +373,7 @@ function buildHtml({ generatedAtIso, sinceIso, untilIso, grouped, total }) {
               <th>Title</th>
               <th>Repository</th>
               <th>Author</th>
-              <th>Created (Europe/Amsterdam)</th>
+              <th>Created (${esc(REPORT_TZ)})</th>
               <th>Labels</th>
               <th>Commit</th>
               <th>Learn</th>
@@ -541,7 +501,7 @@ function buildMarkdownWindow({ title, grouped, total, sinceIso, untilIso }) {
       const tableRows = rows
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
         .map((row) => {
-          const published = `  ${escMd(toAmsterdamTime(row.createdAt))}  `;
+          const published = `  ${escMd(toLocalTime(row.createdAt))}  `;
           const publishedVia = `  ${escMd(row.publishedVia || row.author)}  `;
           const docFile = `  ${escMd(row.fileName || row.title)}  `;
           const commit = `  ${mdLink("commit", row.commitUrl)}  `;
@@ -555,7 +515,7 @@ function buildMarkdownWindow({ title, grouped, total, sinceIso, untilIso }) {
       return `
 ## ${esc(subcategory)} (${rows.length})
 
-| Published (Europe/Amsterdam) | Published via | Doc file | Commit | Learn | Source | PR |
+| Published (${esc(REPORT_TZ)}) | Published via | Doc file | Commit | Learn | Source | PR |
 |---|---|---|---|---|---|---|
 ${tableRows}`;
     })
@@ -607,40 +567,43 @@ async function main() {
 
   const lookbackHours = Number.parseInt(getEnv("LOOKBACK_HOURS", "24"), 10);
 
-  // Anchor the window to midnight (Amsterdam) of the current calendar day, with
+  // Anchor the window to midnight (REPORT_TZ) of the current calendar day, with
   // an explicit upper bound at that same midnight.  This makes the window an
-  // exact, non-overlapping 24h slice (yesterday midnight -> today midnight,
-  // Amsterdam time) no matter when the job actually runs - a scheduled run
-  // fired late, or a manual workflow_dispatch run later the same day, always
-  // reports exactly the same content instead of re-including items already
-  // covered by the previous day's report.
-  // Note: the workflow sets TZ=Europe/Amsterdam so Node.js local-time operations
-  // (new Date(year, month, day)) resolve to Amsterdam midnight in UTC.
-  const todayAmsterdamStr = new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Europe/Amsterdam",
+  // exact, non-overlapping 24h slice (yesterday midnight -> today midnight)
+  // no matter when the job actually runs - a scheduled run fired late, or a
+  // manual workflow_dispatch run later the same day, always reports exactly
+  // the same content instead of re-including items already covered by the
+  // previous day's report.
+  // Note: the workflow sets TZ so Node.js local-time operations
+  // (new Date(year, month, day)) resolve to REPORT_TZ midnight in UTC.
+  const todayLocalStr = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: REPORT_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit"
   }).format(generatedAt);
-  const [amsYear, amsMonth, amsDay] = todayAmsterdamStr.split("-").map(Number);
-  const midnightTodayAmsterdam = new Date(amsYear, amsMonth - 1, amsDay, 0, 0, 0, 0);
+  const [localYear, localMonth, localDay] = todayLocalStr.split("-").map(Number);
+  const midnightTodayLocal = new Date(localYear, localMonth - 1, localDay, 0, 0, 0, 0);
   // When the lookback is a whole number of days, step back by calendar days
   // rather than subtracting fixed milliseconds, so the two DST-transition
   // days a year (23h/25h local days) don't shift the window by an hour.
   const primarySince = lookbackHours % 24 === 0
-    ? new Date(amsYear, amsMonth - 1, amsDay - lookbackHours / 24, 0, 0, 0, 0)
-    : new Date(midnightTodayAmsterdam.getTime() - lookbackHours * 60 * 60 * 1000);
+    ? new Date(localYear, localMonth - 1, localDay - lookbackHours / 24, 0, 0, 0, 0)
+    : new Date(midnightTodayLocal.getTime() - lookbackHours * 60 * 60 * 1000);
   const primarySinceIso = primarySince.toISOString();
-  const primaryUntilIso = midnightTodayAmsterdam.toISOString();
+  const primaryUntilIso = midnightTodayLocal.toISOString();
 
-  const publishRows = await rowsFromPublishBatches(
-    "MicrosoftDocs/entra-docs",
-    githubToken,
-    primarySinceIso,
-    primaryUntilIso
-  );
-
-  const primaryRows = publishRows;
+  const primaryRows = [];
+  for (const source of PUBLISH_SOURCES) {
+    const rows = await rowsFromPublishBatches(
+      source.repo,
+      githubToken,
+      primarySinceIso,
+      primaryUntilIso,
+      source.pathPrefixes
+    );
+    primaryRows.push(...rows);
+  }
   const groupedPrimary = groupRows(primaryRows);
 
   const html = buildHtml({
@@ -665,7 +628,7 @@ async function main() {
   await fs.writeFile(issueOutputPath, issueBody, "utf8");
 
   const dateLabel = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Amsterdam",
+    timeZone: REPORT_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit"

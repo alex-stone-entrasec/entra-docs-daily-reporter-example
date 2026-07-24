@@ -2,7 +2,7 @@
 
 Daily GitHub Actions report for Microsoft Entra documentation updates in a strict 24-hour window.
 
-The workflow runs at 05:00 and 06:00 UTC each day (covering Amsterdam DST transitions), collects updates from Entra docs sources, and posts a formatted GitHub issue so GitHub notifications can email you updates. When the daily issue already exists, the workflow also adds a refresh comment that includes the latest report so the rerun email is not empty.
+The workflow runs once a day at 06:00 UTC, collects updates from Entra docs sources, and posts a formatted GitHub issue so GitHub notifications can email you updates. The report window is an exact, non-overlapping calendar day (midnight to midnight, in the configured timezone), so a late-firing or re-run job always reports the same content instead of duplicating it. When the daily issue already exists, the workflow also adds a refresh comment that includes the latest report so a re-run email is not empty.
 
 ## 1-Minute Quick Start
 
@@ -16,11 +16,12 @@ The workflow runs at 05:00 and 06:00 UTC each day (covering Amsterdam DST transi
 ## What You Get
 
 - Strict 24-hour report window (no multi-day section in the issue body)
-- Data source:
-  - `MicrosoftDocs/entra-docs` via commit feed under `docs/<subpage>`
-- **23 smart categories** (Conditional Access, Authentication, App Provisioning, App Proxy, Hybrid Identity, Devices, Governance, CIEM, and 15 more)
+- Data sources:
+  - `MicrosoftDocs/entra-docs` - all published Entra documentation
+  - `MicrosoftDocs/azure-docs` - `active-directory-b2c` (Entra External ID / B2C content not yet migrated into entra-docs)
+- Categories are derived automatically from each doc's folder path (Conditional Access, Authentication, App Provisioning, App Proxy, Hybrid Identity, Devices, Governance, CIEM, and more) - no fixed category list to maintain
 - Each row includes:
-  - Timestamp (Europe/Amsterdam timezone)
+  - Timestamp (configurable timezone, default Europe/Amsterdam)
   - Author
   - PR/Commit number and title
   - Commit URL
@@ -53,8 +54,8 @@ gh run list --workflow "entra-docs-daily-reporter.yml" --repo <owner>/<repo> --l
 ## Customize
 
 - Main window: `LOOKBACK_HOURS` (default `24`)
-- Entra Docs base path: `ENTRA_DOCS_COMMITS_PATH` (default `docs`)
-- Entra Docs tracked subpages: `ENTRA_DOCS_SUBPAGES`
+- Timezone used for the report window, timestamps, and issue titles: `TZ` (default `Europe/Amsterdam`), set in the workflow's `env:` block
+- Tracked repos/folders: edit the `PUBLISH_SOURCES` list at the top of `tools/entra-docs-reporter/report.mjs`
 
 ## Notes
 

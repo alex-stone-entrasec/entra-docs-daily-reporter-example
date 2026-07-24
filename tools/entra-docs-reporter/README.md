@@ -1,6 +1,6 @@
 # Entra Docs Daily Reporter (GitHub Actions)
 
-This example publishes a **daily report at 07:00 Europe/Amsterdam** with Entra documentation updates in a strict **last 24 hours** window.
+This example publishes a **daily report at 06:00 UTC** with Entra documentation updates in a strict **last 24 hours** window (times shown in the report use the `TZ` env var, default `Europe/Amsterdam`).
 
 It posts a grouped Markdown report to a GitHub issue so GitHub notifications can deliver the email.
 
@@ -12,11 +12,11 @@ It posts a grouped Markdown report to a GitHub issue so GitHub notifications can
 
 ## How it works
 
-1. Workflow triggers at 05:00 and 06:00 UTC. Both triggers run unconditionally — GitHub's scheduled runs are unreliable and can fire late or be skipped, so both triggers always proceed to ensure at least one run completes each day. The second run simply refreshes the existing daily issue with a new comment.
-2. Script scans **Auto Publish batch commits** on `MicrosoftDocs/entra-docs`.
-   These are the `"Auto Publish – main to live"` and `"Merging changes synced"` merge commits created by `learn-build-service-prod[bot]` roughly every 5 hours. They batch all content that was merged to `main` since the previous publish and represent the moment docs become live on learn.microsoft.com.
-3. Script filters batch commits to the last 24 hours and expands each commit into one row per publishable `.md` file it contains.
-4. Results are grouped by the top-level folder under `docs/` (e.g. `identity`, `external-id`, `global-secure-access`).
+1. Workflow triggers once a day at 06:00 UTC (plus `workflow_dispatch` for manual runs). The report window is an exact, non-overlapping calendar day in the `TZ` timezone (midnight to midnight), computed from the run date rather than "now minus 24h" - so a late-firing scheduled run or a manual re-run the same day always reproduces the same window and never duplicates content already reported.
+2. Script scans **Auto Publish batch commits** on each repo listed in `PUBLISH_SOURCES` (see `report.mjs`) - by default `MicrosoftDocs/entra-docs` in full, plus `MicrosoftDocs/azure-docs` scoped to `articles/active-directory-b2c/` (Entra External ID / B2C content that hasn't been migrated into entra-docs yet).
+   Auto Publish batches are the `"Auto Publish – main to live"` and `"Merging changes synced"` merge commits created by `learn-build-service-prod[bot]`. They batch all content that was merged to `main` since the previous publish and represent the moment docs become live on learn.microsoft.com.
+3. Script queries batch commits directly within the window (`since`/`until`) and expands each one into one row per publishable `.md` file it contains.
+4. Results are grouped by the top-level folder under `docs/` or `articles/` (e.g. `identity`, `external-id`, `global-secure-access`, `active-directory-b2c`).
 5. For each file, an MS Learn URL and a GitHub source link are generated.
 6. Workflow creates or updates a daily issue with the report body.
 7. If the daily issue already exists, the workflow adds a refresh comment with the latest report content so GitHub still sends an email notification with a non-empty body.
@@ -36,7 +36,8 @@ GitHub's path-filtered commits API silently excludes merge commits. The old appr
 
 ## Sources scanned (default)
 
-- `MicrosoftDocs/entra-docs` — Auto Publish batch commits within the last 24 hours
+- `MicrosoftDocs/entra-docs` — Auto Publish batch commits within the last 24 hours (all publishable docs)
+- `MicrosoftDocs/azure-docs` — Auto Publish batch commits within the last 24 hours, scoped to `articles/active-directory-b2c/` only. azure-docs covers all of Azure, so it's kept narrow; a batch commit still has its full file list fetched to check for matches, so adding more `pathPrefixes` there increases API calls proportional to how many batches land on that repo per day, not to how narrow the prefix is.
 
 ## Required GitHub setup
 
@@ -57,11 +58,13 @@ GitHub sends issue notifications to subscribers/watchers. To ensure you get this
 3. Open the created report issue and click Subscribe if needed.
 4. You will receive future daily report updates by email from GitHub notifications.
 
-If you want a mailbox rule for info@janbakker.tech, filter on issue title prefix: Daily Entra Docs PR Report.
+If you want a mailbox rule for the report, filter on issue title prefix: Daily Entra Docs PR Report.
 
 ## Customize tracking
 
 - `LOOKBACK_HOURS`: default `24`
+- `TZ`: timezone for the report window, timestamps, and issue titles - default `Europe/Amsterdam`, set in the workflow's `env:` block
+- `PUBLISH_SOURCES` in `report.mjs`: which repos (and optionally which folders within them) get scanned
 
 ## Local test
 
@@ -86,5 +89,5 @@ If you want to share this publicly so others can copy it, publish these files:
 Then include this quick-start snippet in your blog or docs:
 
 ```text
-Copy the workflow + script, run workflow_dispatch once, and subscribe to the generated issue. GitHub notifications will then email daily report updates at 07:00 Europe/Amsterdam.
+Copy the workflow + script, run workflow_dispatch once, and subscribe to the generated issue. GitHub notifications will then email daily report updates once a day.
 ```
